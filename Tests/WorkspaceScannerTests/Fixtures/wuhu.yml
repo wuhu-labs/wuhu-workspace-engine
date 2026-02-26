@@ -1,0 +1,11 @@
+kinds:
+  - kind: recipe
+    properties:
+      - cuisine
+      - difficulty
+      - servings
+  - kind: project
+    properties:
+      - status
+      - priority
+      - owner
