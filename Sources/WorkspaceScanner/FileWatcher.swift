@@ -327,7 +327,10 @@ public final class FileWatcher: @unchecked Sendable {
   import Glibc
 
   /// Context for the inotify polling loop.
-  private final class InotifyContext {
+  ///
+  /// `@unchecked Sendable` because the mutable state (_running, _watchDescriptors)
+  /// is protected by an `NSLock`, and the fd/pipe handles are only mutated in `stop()`.
+  private final class InotifyContext: @unchecked Sendable {
     weak var watcher: FileWatcher?
     let continuation: AsyncStream<FileWatchEvent>.Continuation
     let fd: Int32
