@@ -1,0 +1,15 @@
+# Workspace configuration for wuhu-workspace-engine.
+#
+# Built-in kinds (document, issue) are always available.
+# Define custom kinds here with their known properties.
+# Each kind gets an extension table: kind + "s" (e.g., projects).
+# Properties listed here become columns in the extension table.
+# Any frontmatter property NOT listed here still goes to the
+# universal `properties` table for ad-hoc queries.
+
+kinds:
+  - kind: project
+    properties:
+      - status
+      - priority
+      - owner
