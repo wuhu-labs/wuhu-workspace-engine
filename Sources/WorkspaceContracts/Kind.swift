@@ -4,8 +4,22 @@
 /// Identifies a document kind (e.g., "document", "issue").
 public struct Kind: Sendable, Hashable, Codable, RawRepresentable {
   public let rawValue: String
-  public init(rawValue: String) { self.rawValue = rawValue }
+  public init(rawValue: String) {
+    self.rawValue = rawValue
+  }
 
   public static let document = Kind(rawValue: "document")
   public static let issue = Kind(rawValue: "issue")
+}
+
+extension Kind: ExpressibleByStringLiteral {
+  public init(stringLiteral value: String) {
+    self.init(rawValue: value)
+  }
+}
+
+extension Kind: CustomStringConvertible {
+  public var description: String {
+    rawValue
+  }
 }

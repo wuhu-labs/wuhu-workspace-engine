@@ -28,7 +28,7 @@ let package = Package(
   targets: [
     .target(
       name: "WorkspaceContracts",
-      swiftSettings: strictConcurrency
+      swiftSettings: strictConcurrency,
     ),
     .target(
       name: "WorkspaceEngine",
@@ -36,7 +36,7 @@ let package = Package(
         "WorkspaceContracts",
         .product(name: "GRDB", package: "GRDB.swift"),
       ],
-      swiftSettings: strictConcurrency
+      swiftSettings: strictConcurrency,
     ),
     .target(
       name: "WorkspaceScanner",
@@ -45,7 +45,7 @@ let package = Package(
         "WorkspaceEngine",
         .product(name: "Yams", package: "Yams"),
       ],
-      swiftSettings: strictConcurrency
+      swiftSettings: strictConcurrency,
     ),
     .testTarget(
       name: "WorkspaceEngineTests",
@@ -53,7 +53,7 @@ let package = Package(
         "WorkspaceEngine",
         "WorkspaceContracts",
       ],
-      swiftSettings: strictConcurrency
+      swiftSettings: strictConcurrency,
     ),
     .testTarget(
       name: "WorkspaceScannerTests",
@@ -65,7 +65,7 @@ let package = Package(
       resources: [
         .copy("Fixtures"),
       ],
-      swiftSettings: strictConcurrency
+      swiftSettings: strictConcurrency,
     ),
-  ]
+  ],
 )
