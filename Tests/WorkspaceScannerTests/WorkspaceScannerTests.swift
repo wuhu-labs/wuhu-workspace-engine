@@ -394,7 +394,7 @@ struct FileDiscoveryTests {
     defer { try? FileManager.default.removeItem(at: root) }
 
     let files = try FileDiscovery.discoverMarkdownFiles(in: root)
-    let paths = files.map(\.relativePath)
+    let paths = files.map { FileDiscovery.relativePath(of: $0, to: root) }
 
     #expect(paths.contains("doc1.md"))
     #expect(paths.contains("notes/note1.md"))
@@ -408,7 +408,7 @@ struct FileDiscoveryTests {
     defer { try? FileManager.default.removeItem(at: root) }
 
     let files = try FileDiscovery.discoverMarkdownFiles(in: root)
-    let paths = files.map(\.relativePath)
+    let paths = files.map { FileDiscovery.relativePath(of: $0, to: root) }
 
     #expect(!paths.contains(".hidden/secret.md"))
     #expect(!paths.contains(".git/HEAD.md"))
@@ -420,7 +420,7 @@ struct FileDiscoveryTests {
     defer { try? FileManager.default.removeItem(at: root) }
 
     let files = try FileDiscovery.discoverMarkdownFiles(in: root)
-    let paths = files.map(\.relativePath)
+    let paths = files.map { FileDiscovery.relativePath(of: $0, to: root) }
 
     #expect(!paths.contains("node_modules/package.md"))
   }
@@ -431,7 +431,7 @@ struct FileDiscoveryTests {
     defer { try? FileManager.default.removeItem(at: root) }
 
     let files = try FileDiscovery.discoverMarkdownFiles(in: root)
-    let paths = files.map(\.relativePath)
+    let paths = files.map { FileDiscovery.relativePath(of: $0, to: root) }
 
     #expect(!paths.contains("images/photo.png"))
   }
@@ -442,7 +442,7 @@ struct FileDiscoveryTests {
     defer { try? FileManager.default.removeItem(at: root) }
 
     let files = try FileDiscovery.discoverMarkdownFiles(in: root)
-    let paths = files.map(\.relativePath)
+    let paths = files.map { FileDiscovery.relativePath(of: $0, to: root) }
 
     #expect(paths == paths.sorted())
   }

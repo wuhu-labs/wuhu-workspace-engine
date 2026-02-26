@@ -13,20 +13,22 @@ public enum FileDiscovery {
 
   /// Recursively discovers all `.md` files in the given root directory.
   ///
-  /// Returns workspace-relative paths (relative to `root`). Skips hidden files
-  /// and directories (names starting with `.`) as well as well-known directories
+  /// Returns absolute URLs to discovered files. Skips hidden files and
+  /// directories (names starting with `.`) as well as well-known directories
   /// like `node_modules` and `.build`.
   ///
   /// - Parameter root: The root URL of the workspace directory.
-  /// - Returns: An array of URLs pointing to discovered Markdown files.
+  /// - Returns: An array of URLs pointing to discovered Markdown files, sorted
+  ///   by their workspace-relative path.
   public static func discoverMarkdownFiles(in root: URL) throws -> [URL] {
     let fileManager = FileManager.default
-    var results: [URL] = []
+    let rootPath = root.standardizedFileURL.path
+    var results: [(url: URL, relative: String)] = []
 
     guard let enumerator = fileManager.enumerator(
       at: root,
       includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
-      options: [.producesRelativePathURLs],
+      options: [],
     ) else {
       return []
     }
@@ -46,7 +48,7 @@ public enum FileDiscovery {
         continue
       }
 
-      // Check if it's a directory — if so, continue recursion.
+      // Check if it's a regular file.
       let resourceValues = try fileURL.resourceValues(forKeys: [.isRegularFileKey])
       guard resourceValues.isRegularFile == true else {
         continue
@@ -54,30 +56,35 @@ public enum FileDiscovery {
 
       // Only include .md files.
       if fileURL.pathExtension.lowercased() == "md" {
-        results.append(fileURL)
+        let rel = relativePath(of: fileURL, rootPath: rootPath)
+        results.append((url: fileURL, relative: rel))
       }
     }
 
-    return results.sorted { $0.relativePath < $1.relativePath }
+    return results
+      .sorted { $0.relative < $1.relative }
+      .map(\.url)
   }
 
-  /// Computes the workspace-relative path from an absolute file URL and a root URL.
+  /// Computes the workspace-relative path from a file URL and a root URL.
   ///
   /// - Parameters:
-  ///   - fileURL: The absolute URL to the file.
+  ///   - fileURL: The URL to the file (absolute or relative).
   ///   - root: The root URL of the workspace.
   /// - Returns: The workspace-relative path string.
   public static func relativePath(of fileURL: URL, to root: URL) -> String {
-    let filePath = fileURL.standardizedFileURL.path
-    let rootPath = root.standardizedFileURL.path
+    relativePath(of: fileURL, rootPath: root.standardizedFileURL.path)
+  }
 
+  /// Internal helper that computes relative path from a pre-computed root path.
+  private static func relativePath(of fileURL: URL, rootPath: String) -> String {
+    let filePath = fileURL.standardizedFileURL.path
     let rootPrefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
 
     if filePath.hasPrefix(rootPrefix) {
       return String(filePath.dropFirst(rootPrefix.count))
     }
 
-    // Fallback: use the relative path from the URL if available.
-    return fileURL.relativePath
+    return fileURL.lastPathComponent
   }
 }
