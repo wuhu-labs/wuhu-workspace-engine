@@ -47,7 +47,7 @@ Kinds are defined in `wuhu.yml` at the workspace root. Built-in kinds: `document
 import WorkspaceEngine
 import WorkspaceScanner
 
-// 1. Load configuration (reads wuhu.yml for custom kinds).
+// 1. Load configuration (reads wuhu.yml for custom kinds and path rules).
 let root = URL(fileURLWithPath: "/path/to/workspace")
 let scanner = WorkspaceScanner(root: root)
 let config = try scanner.loadConfiguration()
@@ -56,20 +56,23 @@ let config = try scanner.loadConfiguration()
 let engine = try WorkspaceEngine(configuration: config)
 
 // 3. Scan — discovers .md files, parses frontmatter, populates the engine.
-try scanner.scan(into: engine)
+// scan(into:) is async — it uses the engine's async API internally.
+try await scanner.scan(into: engine)
 ```
 
 ### Query documents
 
+All `WorkspaceEngine` query methods are `async throws`:
+
 ```swift
 // All documents, sorted by path.
-let all = try engine.allDocuments()
+let all = try await engine.allDocuments()
 
 // Only issues.
-let issues = try engine.documents(where: .issue)
+let issues = try await engine.documents(where: .issue)
 
 // Single document by path.
-if let doc = try engine.document(at: "issues/0001.md") {
+if let doc = try await engine.document(at: "issues/0001.md") {
     print(doc.title ?? "untitled")       // from frontmatter or first # heading
     print(doc.kind)                       // e.g. "issue"
     print(doc.properties["status"] ?? "") // e.g. "open"
@@ -83,7 +86,7 @@ names to string values (NULLs are omitted).
 
 ```swift
 // Open issues via the kind extension table.
-let openIssues = try engine.rawQuery("""
+let openIssues = try await engine.rawQuery("""
     SELECT d.path, d.title, i.status, i.priority
     FROM docs d
     JOIN issues i ON d.path = i.path
@@ -91,7 +94,7 @@ let openIssues = try engine.rawQuery("""
 """)
 
 // Documents with a specific property (via the properties table).
-let tagged = try engine.rawQuery("""
+let tagged = try await engine.rawQuery("""
     SELECT d.path, d.title
     FROM docs d
     JOIN properties p ON d.path = p.path
@@ -99,7 +102,7 @@ let tagged = try engine.rawQuery("""
 """)
 
 // Count documents by kind.
-let counts = try engine.rawQuery("""
+let counts = try await engine.rawQuery("""
     SELECT kind, COUNT(*) as count FROM docs GROUP BY kind
 """)
 ```
@@ -145,9 +148,9 @@ built-in `issues` table:
 ```swift
 let config = try scanner.loadConfiguration()
 let engine = try WorkspaceEngine(configuration: config)
-try scanner.scan(into: engine)
+try await scanner.scan(into: engine)
 
-let active = try engine.rawQuery("""
+let active = try await engine.rawQuery("""
     SELECT d.path, d.title, p.owner
     FROM docs d
     JOIN projects p ON d.path = p.path
@@ -159,6 +162,45 @@ Built-in kinds (`document`, `issue`) are always available. If you list a built-i
 kind in `wuhu.yml`, your definition replaces the default (e.g., to add extra
 columns to `issues`).
 
+### Path-based rules in `wuhu.yml`
+
+Instead of requiring `kind` in every file's frontmatter, you can define path-based
+rules that assign kinds based on directory structure:
+
+```yaml
+rules:
+  - path: "issues/**"
+    kind: issue
+  - path: "docs/architecture/**"
+    kind: architecture
+  - path: "recipes/**"
+    kind: recipe
+```
+
+Rules are evaluated in order. The first rule whose glob pattern matches a
+document's workspace-relative path determines its kind. Frontmatter `kind`
+always takes precedence over rules — rules are a fallback for files that don't
+specify a kind.
+
+Glob patterns support:
+- `*` — matches any characters within a single path segment (no `/`)
+- `**` — matches zero or more path segments (any depth)
+
+You can combine `kinds` and `rules` in the same `wuhu.yml`:
+
+```yaml
+kinds:
+  - kind: recipe
+    properties:
+      - cuisine
+      - difficulty
+rules:
+  - path: "issues/**"
+    kind: issue
+  - path: "recipes/**"
+    kind: recipe
+```
+
 ## Example Workspace
 
 See [`docs/example-workspace/`](docs/example-workspace/) for a realistic workspace
@@ -167,6 +209,26 @@ layout demonstrating custom kinds, frontmatter conventions, and title extraction
 ## Query Cookbook
 
 See [`USAGE.md`](USAGE.md) for more SQL examples against the indexed data.
+
+## Known Limitations
+
+### Single-valued properties
+
+The `properties` table has `PRIMARY KEY (path, key)` — each document can have
+only one value per property key. Multi-valued properties (arrays like
+`tags: [auth, security]`) are not supported. The frontmatter parser drops
+arrays and nested structures silently.
+
+**Future direction:** multi-valued properties for tags, doc links, and other
+list-valued metadata.
+
+### String-only values
+
+`rawQuery` returns `[[String: String]]` — all result values are cast to strings,
+including numeric results like `COUNT(*)`. The engine stores all property values
+as `TEXT` in SQLite. SQLite's dynamic typing and `CAST` still enable numeric
+sorting and date comparisons on these string values, but programmatic consumers
+that need typed results must parse the strings themselves.
 
 ## License
 

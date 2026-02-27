@@ -322,7 +322,7 @@ struct WorkspaceScannerWatchTests {
     _ = try? await task.value
 
     // The initial document should be in the engine.
-    let doc = try engine.document(at: "initial.md")
+    let doc = try await engine.document(at: "initial.md")
     #expect(doc != nil)
     #expect(doc?.record.title == "Initial Doc")
   }
@@ -358,7 +358,7 @@ struct WorkspaceScannerWatchTests {
     task.cancel()
     _ = try? await task.value
 
-    let doc = try engine.document(at: "new-note.md")
+    let doc = try await engine.document(at: "new-note.md")
     #expect(doc != nil)
     #expect(doc?.record.title == "New Note")
   }
@@ -379,7 +379,7 @@ struct WorkspaceScannerWatchTests {
     try await Task.sleep(for: .milliseconds(500))
 
     // Verify the initial doc is there.
-    let initialDoc = try engine.document(at: "initial.md")
+    let initialDoc = try await engine.document(at: "initial.md")
     #expect(initialDoc != nil)
 
     // Delete the file.
@@ -390,7 +390,7 @@ struct WorkspaceScannerWatchTests {
     task.cancel()
     _ = try? await task.value
 
-    let deletedDoc = try engine.document(at: "initial.md")
+    let deletedDoc = try await engine.document(at: "initial.md")
     #expect(deletedDoc == nil)
   }
 }

@@ -1,6 +1,6 @@
 /// The parsed shape of a workspace's `wuhu.yml` configuration file.
 ///
-/// Contains kind definitions and any workspace-level settings.
+/// Contains kind definitions, path-based rules, and any workspace-level settings.
 public struct WorkspaceConfiguration: Sendable, Hashable, Codable {
   /// Custom kind definitions declared in `wuhu.yml`.
   ///
@@ -8,12 +8,21 @@ public struct WorkspaceConfiguration: Sendable, Hashable, Codable {
   /// be listed here — but they can be to extend their known properties.
   public var kinds: [KindDefinition]
 
-  public init(kinds: [KindDefinition] = []) {
+  /// Path-based rules for assigning kinds to documents based on their path.
+  ///
+  /// Rules are evaluated in order. The first rule whose glob pattern matches a
+  /// document's workspace-relative path determines the document's kind — but only
+  /// if the document has no `kind` in its frontmatter. Frontmatter always takes
+  /// precedence.
+  public var rules: [Rule]
+
+  public init(kinds: [KindDefinition] = [], rules: [Rule] = []) {
     self.kinds = kinds
+    self.rules = rules
   }
 }
 
 public extension WorkspaceConfiguration {
-  /// A configuration with no custom kinds — only built-ins apply.
+  /// A configuration with no custom kinds or rules — only built-ins apply.
   static let empty = WorkspaceConfiguration()
 }

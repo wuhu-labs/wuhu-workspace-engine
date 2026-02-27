@@ -20,7 +20,10 @@ extension WorkspaceScanner {
   /// - Parameter engine: The engine to keep in sync with the filesystem.
   public func watch(engine: WorkspaceEngine) async throws {
     // 1. Initial scan.
-    try scan(into: engine)
+    try await scan(into: engine)
+
+    // Load configuration for rule-based kind resolution during incremental updates.
+    let config = try loadConfiguration()
 
     // 2. Start the file watcher.
     let watcher = FileWatcher(root: root)
@@ -35,13 +38,13 @@ extension WorkspaceScanner {
 
       switch event {
       case let .created(path), let .modified(path):
-        processFileChange(path: path, engine: engine)
+        await processFileChange(path: path, engine: engine, rules: config.rules)
 
       case let .deleted(path):
-        processFileDeletion(path: path, engine: engine)
+        await processFileDeletion(path: path, engine: engine)
 
       case .scanRequired:
-        try scan(into: engine)
+        try await scan(into: engine)
       }
     }
   }
@@ -50,7 +53,11 @@ extension WorkspaceScanner {
   ///
   /// Re-parses the file and upserts it into the engine. Only `.md` files
   /// are processed; other file types are silently ignored.
-  private func processFileChange(path: String, engine: WorkspaceEngine) {
+  private func processFileChange(
+    path: String,
+    engine: WorkspaceEngine,
+    rules: [Rule],
+  ) async {
     // Only process .md files.
     guard path.hasSuffix(".md") else { return }
 
@@ -60,8 +67,8 @@ extension WorkspaceScanner {
     guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
 
     do {
-      let (record, properties) = try parseFile(at: fileURL)
-      try engine.upsertDocument(record, properties: properties)
+      let (record, properties) = try parseFile(at: fileURL, rules: rules)
+      try await engine.upsertDocument(record, properties: properties)
     } catch {
       // If parsing fails, skip this file. It might be a partial write.
     }
@@ -70,11 +77,11 @@ extension WorkspaceScanner {
   /// Processes a file deletion event.
   ///
   /// Removes the document from the engine. Only `.md` files are processed.
-  private func processFileDeletion(path: String, engine: WorkspaceEngine) {
+  private func processFileDeletion(path: String, engine: WorkspaceEngine) async {
     guard path.hasSuffix(".md") else { return }
 
     do {
-      try engine.removeDocument(at: path)
+      try await engine.removeDocument(at: path)
     } catch {
       // Best-effort removal. The document might not exist in the engine
       // (e.g., it was a non-markdown file or was never indexed).

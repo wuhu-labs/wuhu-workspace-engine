@@ -57,12 +57,17 @@ public struct WorkspaceScanner: Sendable {
   /// 3. Extracts `kind` (defaults to `.document`) and `title` (falls back to first heading).
   /// 4. Returns the document record and remaining properties.
   ///
-  /// - Parameter fileURL: The URL of the Markdown file to parse.
+  /// - Parameters:
+  ///   - fileURL: The URL of the Markdown file to parse.
+  ///   - rules: Optional path-based rules used as a fallback when frontmatter has no `kind`.
   /// - Returns: A tuple of the document record and property dictionary.
-  public func parseFile(at fileURL: URL) throws -> (record: DocumentRecord, properties: [String: String]) {
+  public func parseFile(
+    at fileURL: URL,
+    rules: [Rule] = [],
+  ) throws -> (record: DocumentRecord, properties: [String: String]) {
     let content = try String(contentsOf: fileURL, encoding: .utf8)
     let relativePath = FileDiscovery.relativePath(of: fileURL, to: root)
-    return Self.parseContent(content, path: relativePath)
+    return Self.parseContent(content, path: relativePath, rules: rules)
   }
 
   /// Parses Markdown content and returns a ``DocumentRecord`` and properties.
@@ -77,13 +82,34 @@ public struct WorkspaceScanner: Sendable {
     _ content: String,
     path: String,
   ) -> (record: DocumentRecord, properties: [String: String]) {
+    parseContent(content, path: path, rules: [])
+  }
+
+  /// Parses Markdown content and returns a ``DocumentRecord`` and properties.
+  ///
+  /// This is a pure function (no filesystem access) for ease of testing.
+  /// When a document has no `kind` in its frontmatter, the rules are checked
+  /// in order — the first rule whose glob pattern matches the document's path
+  /// determines its kind. If no rule matches, the kind defaults to `.document`.
+  ///
+  /// - Parameters:
+  ///   - content: The raw Markdown content.
+  ///   - path: The workspace-relative path for the resulting record.
+  ///   - rules: Path-based rules for kind assignment (frontmatter takes precedence).
+  /// - Returns: A tuple of the document record and property dictionary.
+  public static func parseContent(
+    _ content: String,
+    path: String,
+    rules: [Rule],
+  ) -> (record: DocumentRecord, properties: [String: String]) {
     let parsed = FrontmatterParser.parse(content)
 
-    // Extract kind.
+    // Extract kind. Frontmatter always takes precedence.
     let kind: Kind = if let kindString = parsed.fields["kind"] {
       Kind(rawValue: kindString)
     } else {
-      .document
+      // Check path-based rules.
+      kindFromRules(rules, path: path) ?? .document
     }
 
     // Extract title: from frontmatter, or from the first heading.
@@ -103,23 +129,35 @@ public struct WorkspaceScanner: Sendable {
     return (record: record, properties: properties)
   }
 
+  /// Returns the kind from the first matching rule, or `nil` if no rule matches.
+  private static func kindFromRules(_ rules: [Rule], path: String) -> Kind? {
+    for rule in rules {
+      if GlobMatcher.matches(pattern: rule.path, path: path) {
+        return rule.kind
+      }
+    }
+    return nil
+  }
+
   // MARK: - Full Scan
 
   /// Performs a full scan: discovers files, parses them, and populates the engine.
   ///
   /// This clears all existing documents from the engine and replaces them with
-  /// the current state of the filesystem.
+  /// the current state of the filesystem. Path-based rules from the workspace
+  /// configuration are used to assign kinds when frontmatter doesn't specify one.
   ///
   /// - Parameter engine: The engine to populate with scanned documents.
-  public func scan(into engine: WorkspaceEngine) throws {
+  public func scan(into engine: WorkspaceEngine) async throws {
+    let config = try loadConfiguration()
     let files = try discoverFiles()
 
     // Clear existing data so the engine reflects current filesystem state.
-    try engine.removeAllDocuments()
+    try await engine.removeAllDocuments()
 
     for fileURL in files {
-      let (record, properties) = try parseFile(at: fileURL)
-      try engine.upsertDocument(record, properties: properties)
+      let (record, properties) = try parseFile(at: fileURL, rules: config.rules)
+      try await engine.upsertDocument(record, properties: properties)
     }
   }
 }

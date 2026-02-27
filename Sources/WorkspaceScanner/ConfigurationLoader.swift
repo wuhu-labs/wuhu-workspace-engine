@@ -34,6 +34,11 @@ public enum ConfigurationLoader {
   ///     properties:
   ///       - cuisine
   ///       - difficulty
+  /// rules:
+  ///   - path: "issues/**"
+  ///     kind: issue
+  ///   - path: "docs/architecture/**"
+  ///     kind: architecture
   /// ```
   public static func parseConfiguration(_ yaml: String) throws -> WorkspaceConfiguration {
     guard !yaml.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -48,8 +53,16 @@ public enum ConfigurationLoader {
       return .empty
     }
 
+    let definitions = parseKinds(from: dict)
+    let rules = parseRules(from: dict)
+
+    return WorkspaceConfiguration(kinds: definitions, rules: rules)
+  }
+
+  /// Parses the `kinds` section from the top-level YAML dictionary.
+  private static func parseKinds(from dict: [String: Any]) -> [KindDefinition] {
     guard let kindsArray = dict["kinds"] as? [[String: Any]] else {
-      return .empty
+      return []
     }
 
     var definitions: [KindDefinition] = []
@@ -72,6 +85,31 @@ public enum ConfigurationLoader {
       definitions.append(definition)
     }
 
-    return WorkspaceConfiguration(kinds: definitions)
+    return definitions
+  }
+
+  /// Parses the `rules` section from the top-level YAML dictionary.
+  private static func parseRules(from dict: [String: Any]) -> [Rule] {
+    guard let rulesArray = dict["rules"] as? [[String: Any]] else {
+      return []
+    }
+
+    var rules: [Rule] = []
+
+    for ruleDict in rulesArray {
+      guard let pathPattern = ruleDict["path"] as? String,
+            let kindName = ruleDict["kind"] as? String
+      else {
+        continue
+      }
+
+      let rule = Rule(
+        path: pathPattern,
+        kind: Kind(rawValue: kindName),
+      )
+      rules.append(rule)
+    }
+
+    return rules
   }
 }

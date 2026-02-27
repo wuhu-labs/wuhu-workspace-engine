@@ -21,7 +21,8 @@ Public types:
 - `PropertyRecord` — a row in the `properties` table: `path`, `key`, `value`.
 - `WorkspaceDocument` — a fully-loaded document: its `DocumentRecord` + all properties as `[String: String]`. Convenience accessors: `.path`, `.kind`, `.title`.
 - `KindDefinition` — describes a kind and its known property keys (columns in the extension table). Built-in statics: `.document` (no properties), `.issue` (status, priority).
-- `WorkspaceConfiguration` — parsed shape of `wuhu.yml`: an array of `KindDefinition`s. Static `.empty` for no custom kinds.
+- `WorkspaceConfiguration` — parsed shape of `wuhu.yml`: an array of `KindDefinition`s and an array of `Rule`s. Static `.empty` for no custom kinds or rules.
+- `Rule` — a path-based rule: `path` (glob pattern) and `kind` (Kind). Used to assign kinds based on directory structure when frontmatter doesn't specify one.
 
 ### WorkspaceEngine
 
@@ -30,17 +31,23 @@ Pure SQLite-backed query engine. Owns the database. **No filesystem knowledge.**
 Public API on `WorkspaceEngine` (a `Sendable` final class):
 - `init(configuration:) throws` — in-memory database.
 - `init(path:configuration:) throws` — file-backed database.
-- `upsertDocument(_:properties:) throws` — insert or replace a document + properties + kind extension row.
-- `removeDocument(at:) throws` — delete by path (cascades to properties and kind extension).
-- `removeAllDocuments() throws` — clear everything.
-- `allDocuments() throws -> [WorkspaceDocument]` — all documents, sorted by path.
-- `documents(where:) throws -> [WorkspaceDocument]` — filter by kind.
-- `document(at:) throws -> WorkspaceDocument?` — single document by path.
-- `rawQuery(_:) throws -> [[String: String]]` — arbitrary SELECT. Each row = `[columnName: stringValue]`, NULLs omitted.
-- `rawExecute(_:) throws` — arbitrary mutating SQL.
+- `upsertDocument(_:properties:) async throws` — insert or replace a document + properties + kind extension row.
+- `removeDocument(at:) async throws` — delete by path (cascades to properties and kind extension).
+- `removeAllDocuments() async throws` — clear everything.
+- `allDocuments() async throws -> [WorkspaceDocument]` — all documents, sorted by path.
+- `documents(where:) async throws -> [WorkspaceDocument]` — filter by kind.
+- `document(at:) async throws -> WorkspaceDocument?` — single document by path.
+- `rawQuery(_:) async throws -> [[String: String]]` — arbitrary SELECT. Each row = `[columnName: stringValue]`, NULLs omitted.
+- `rawExecute(_:) async throws` — arbitrary mutating SQL.
 - `observeAllDocuments() -> AsyncValueObservation<[WorkspaceDocument]>` — GRDB observation, fires on any docs/properties change.
 - `observeDocuments(where:) -> AsyncValueObservation<[WorkspaceDocument]>` — GRDB observation filtered by kind.
 - `kindDefinitions: [KindDefinition]` — the resolved definitions used for the schema.
+
+All public read/write methods are `async throws`, using GRDB's async `DatabaseQueue`
+overloads. This frees the calling cooperative thread while SQLite work runs on
+GRDB's dedicated `SerialExecutor`-backed `DispatchQueue`. Initialization
+(`init`) remains synchronous since schema creation must complete before the
+engine is usable.
 
 Schema created on init:
 1. `docs` table — `path TEXT PK`, `kind TEXT NOT NULL DEFAULT 'document'`, `title TEXT`.
@@ -57,9 +64,10 @@ Public types and API:
   - `init(root: URL)` — root URL of the workspace directory.
   - `loadConfiguration() throws -> WorkspaceConfiguration` — reads `wuhu.yml` at the root.
   - `discoverFiles() throws -> [URL]` — recursively finds `.md` files (skips `.git`, `.build`, `.hidden`, `node_modules`).
-  - `parseFile(at:) throws -> (record: DocumentRecord, properties: [String: String])` — reads and parses a single file.
+  - `parseFile(at:rules:) throws -> (record: DocumentRecord, properties: [String: String])` — reads and parses a single file. Optional `rules` parameter for path-based kind assignment.
   - `parseContent(_:path:) -> (record: DocumentRecord, properties: [String: String])` — pure, no filesystem (static method).
-  - `scan(into:) throws` — full scan: discover + parse + populate engine (clears existing data first). **Synchronous.**
+  - `parseContent(_:path:rules:) -> (record: DocumentRecord, properties: [String: String])` — pure, with path-based rules for kind fallback (static method).
+  - `scan(into:) async throws` — full scan: discover + parse + populate engine (clears existing data first). Loads configuration and applies path-based rules. **Async.**
   - `watch(engine:) async throws` — initial scan + live FSEvents/inotify watching. Runs until task is cancelled.
 
 - `FrontmatterParser` — enum with static methods:
@@ -68,11 +76,14 @@ Public types and API:
 
 - `ConfigurationLoader` — enum with static methods:
   - `loadConfiguration(from:) throws -> WorkspaceConfiguration` — reads `wuhu.yml`. Returns `.empty` if the file doesn't exist.
-  - `parseConfiguration(_:) throws -> WorkspaceConfiguration` — parses a YAML string.
+  - `parseConfiguration(_:) throws -> WorkspaceConfiguration` — parses a YAML string. Handles both `kinds` and `rules` sections.
 
 - `FileDiscovery` — enum with static methods:
   - `discoverMarkdownFiles(in:) throws -> [URL]` — recursive `.md` discovery, sorted by relative path.
   - `relativePath(of:to:) -> String` — computes workspace-relative path.
+
+- `GlobMatcher` — enum with static methods:
+  - `matches(pattern:path:) -> Bool` — matches a path against a glob pattern. Supports `*` (within segment) and `**` (across segments). Uses `fnmatch(3)` under the hood.
 
 - `FileWatcher` — watches a directory tree for filesystem changes.
   - `init(root: URL)` — resolves symlinks via `realpath(3)`.
@@ -96,6 +107,23 @@ Public types and API:
 Kinds are defined in `wuhu.yml`. Built-in kinds: `document` (no extension table,
 since it has no properties), `issue` (extension table `issues` with `status`,
 `priority`).
+
+## Path-Based Rules
+
+Documents can get their `kind` from three sources (in priority order):
+1. **Frontmatter** — `kind: issue` in the YAML frontmatter always wins.
+2. **Path rules** — `rules` in `wuhu.yml` match glob patterns against the
+   document's workspace-relative path. First match wins.
+3. **Default** — `.document` if nothing else matches.
+
+Example `wuhu.yml`:
+```yaml
+rules:
+  - path: "issues/**"
+    kind: issue
+  - path: "docs/architecture/**"
+    kind: architecture
+```
 
 ## Local Dev
 
@@ -128,10 +156,10 @@ Linux (Ubuntu Noble with `swift:6.2-noble`). macOS job also runs swiftformat lin
 ### Test counts
 
 - `WorkspaceEngineTests` — 31 tests across Schema, CRUD, Query, MultipleKind, EdgeCase suites.
-- `WorkspaceScannerTests` — 34 tests across FrontmatterParser, TitleExtraction, ParseContent, ConfigurationLoader, FileDiscovery, Integration suites.
+- `WorkspaceScannerTests` — 51 tests across FrontmatterParser, TitleExtraction, ParseContent, PathBasedRules, GlobMatcher, ConfigurationLoader, FileDiscovery, Integration suites.
 - `FileWatcherTests` — 14 tests across FileWatcher, PathHelpers, WorkspaceScanner.watch suites.
 
-Total: 79 tests.
+Total: 96 tests.
 
 ## Key Design Decisions
 
@@ -147,15 +175,24 @@ Total: 79 tests.
 3. **Extension table names use naive pluralization** (kind + "s"). Simple and predictable:
    `issue` → `issues`, `project` → `projects`, `recipe` → `recipes`.
 
-4. **`scan(into:)` is synchronous.** It clears the engine and repopulates from
-   scratch. The async `watch(engine:)` builds on top of it.
+4. **`scan(into:)` is async.** It clears the engine and repopulates from scratch.
+   It loads the configuration (including path rules) and threads rules through to
+   `parseContent`. The async `watch(engine:)` builds on top of it.
 
-5. **File watcher uses native APIs.** FSEvents on macOS, inotify on Linux. No
+5. **All engine methods are async.** Uses GRDB's async `DatabaseQueue` overloads
+   backed by a proper `SerialExecutor` on a dedicated `DispatchQueue`. This frees
+   the calling cooperative thread while SQLite work runs.
+
+6. **File watcher uses native APIs.** FSEvents on macOS, inotify on Linux. No
    polling. The watcher emits `.scanRequired` on overflow rather than trying to
    reconstruct what happened.
 
-6. **`kind` and `title` are extracted from frontmatter, not stored in `properties`.**
+7. **`kind` and `title` are extracted from frontmatter, not stored in `properties`.**
    They live on `DocumentRecord` / the `docs` table. Everything else goes to properties.
+
+8. **Path rules are a fallback.** Frontmatter `kind` always takes precedence.
+   Rules provide convention-over-configuration for workspaces where directory
+   structure implies document kind.
 
 ## Workspace + Issues
 

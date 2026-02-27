@@ -123,8 +123,8 @@ public final class WorkspaceEngine: Sendable {
   public func upsertDocument(
     _ record: DocumentRecord,
     properties: [String: String] = [:],
-  ) throws {
-    try dbQueue.write { db in
+  ) async throws {
+    try await dbQueue.write { db in
       try db.execute(sql: "PRAGMA foreign_keys = ON")
 
       // Upsert into docs.
@@ -189,8 +189,8 @@ public final class WorkspaceEngine: Sendable {
   /// are removed via CASCADE).
   ///
   /// - Parameter path: The workspace-relative path of the document to remove.
-  public func removeDocument(at path: String) throws {
-    try dbQueue.write { db in
+  public func removeDocument(at path: String) async throws {
+    try await dbQueue.write { db in
       try db.execute(sql: "PRAGMA foreign_keys = ON")
       try db.execute(
         sql: "DELETE FROM docs WHERE path = ?",
@@ -200,8 +200,8 @@ public final class WorkspaceEngine: Sendable {
   }
 
   /// Removes all documents from the database.
-  public func removeAllDocuments() throws {
-    try dbQueue.write { db in
+  public func removeAllDocuments() async throws {
+    try await dbQueue.write { db in
       try db.execute(sql: "PRAGMA foreign_keys = ON")
       try db.execute(sql: "DELETE FROM docs")
     }
@@ -210,8 +210,8 @@ public final class WorkspaceEngine: Sendable {
   // MARK: - Queries
 
   /// Returns all documents with their properties.
-  public func allDocuments() throws -> [WorkspaceDocument] {
-    try dbQueue.read { db in
+  public func allDocuments() async throws -> [WorkspaceDocument] {
+    try await dbQueue.read { db in
       try self.fetchDocuments(db, sql: "SELECT * FROM docs ORDER BY path")
     }
   }
@@ -219,8 +219,8 @@ public final class WorkspaceEngine: Sendable {
   /// Returns all documents of a given kind.
   ///
   /// - Parameter kind: The kind to filter by.
-  public func documents(where kind: Kind) throws -> [WorkspaceDocument] {
-    try dbQueue.read { db in
+  public func documents(where kind: Kind) async throws -> [WorkspaceDocument] {
+    try await dbQueue.read { db in
       try self.fetchDocuments(
         db,
         sql: "SELECT * FROM docs WHERE kind = ? ORDER BY path",
@@ -232,8 +232,8 @@ public final class WorkspaceEngine: Sendable {
   /// Returns a single document by its path, or `nil` if not found.
   ///
   /// - Parameter path: The workspace-relative path.
-  public func document(at path: String) throws -> WorkspaceDocument? {
-    try dbQueue.read { db in
+  public func document(at path: String) async throws -> WorkspaceDocument? {
+    try await dbQueue.read { db in
       let docs = try self.fetchDocuments(
         db,
         sql: "SELECT * FROM docs WHERE path = ?",
@@ -250,8 +250,8 @@ public final class WorkspaceEngine: Sendable {
   /// the string representation of column values (NULLs are omitted).
   ///
   /// - Parameter sql: The SQL to execute.
-  public func rawQuery(_ sql: String) throws -> [[String: String]] {
-    try dbQueue.read { db in
+  public func rawQuery(_ sql: String) async throws -> [[String: String]] {
+    try await dbQueue.read { db in
       let rows = try Row.fetchAll(db, sql: sql)
       return rows.map { row in
         var dict: [String: String] = [:]
@@ -268,8 +268,8 @@ public final class WorkspaceEngine: Sendable {
   /// Executes arbitrary SQL that modifies the database (INSERT, UPDATE, DELETE, etc.).
   ///
   /// - Parameter sql: The SQL to execute.
-  public func rawExecute(_ sql: String) throws {
-    try dbQueue.write { db in
+  public func rawExecute(_ sql: String) async throws {
+    try await dbQueue.write { db in
       try db.execute(sql: sql)
     }
   }
