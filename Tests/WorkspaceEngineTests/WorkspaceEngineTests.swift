@@ -7,10 +7,10 @@ import WorkspaceContracts
 @Suite("Schema Creation")
 struct SchemaTests {
   @Test("Creates docs table with correct columns")
-  func docsTableExists() throws {
+  func docsTableExists() async throws {
     let engine = try WorkspaceEngine()
 
-    let columns = try engine.rawQuery(
+    let columns = try await engine.rawQuery(
       "SELECT name FROM pragma_table_info('docs') ORDER BY cid",
     )
 
@@ -19,10 +19,10 @@ struct SchemaTests {
   }
 
   @Test("Creates properties table with correct columns")
-  func propertiesTableExists() throws {
+  func propertiesTableExists() async throws {
     let engine = try WorkspaceEngine()
 
-    let columns = try engine.rawQuery(
+    let columns = try await engine.rawQuery(
       "SELECT name FROM pragma_table_info('properties') ORDER BY cid",
     )
 
@@ -31,10 +31,10 @@ struct SchemaTests {
   }
 
   @Test("Creates issues extension table with correct columns")
-  func issuesTableExists() throws {
+  func issuesTableExists() async throws {
     let engine = try WorkspaceEngine()
 
-    let columns = try engine.rawQuery(
+    let columns = try await engine.rawQuery(
       "SELECT name FROM pragma_table_info('issues') ORDER BY cid",
     )
 
@@ -43,10 +43,10 @@ struct SchemaTests {
   }
 
   @Test("Does not create extension table for document kind (no properties)")
-  func noDocumentsExtensionTable() throws {
+  func noDocumentsExtensionTable() async throws {
     let engine = try WorkspaceEngine()
 
-    let tables = try engine.rawQuery(
+    let tables = try await engine.rawQuery(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='documents'",
     )
 
@@ -54,7 +54,7 @@ struct SchemaTests {
   }
 
   @Test("Creates custom kind extension table")
-  func customKindTable() throws {
+  func customKindTable() async throws {
     let customKind = KindDefinition(
       kind: Kind(rawValue: "recipe"),
       properties: ["cuisine", "difficulty", "servings"],
@@ -62,7 +62,7 @@ struct SchemaTests {
     let config = WorkspaceConfiguration(kinds: [customKind])
     let engine = try WorkspaceEngine(configuration: config)
 
-    let columns = try engine.rawQuery(
+    let columns = try await engine.rawQuery(
       "SELECT name FROM pragma_table_info('recipes') ORDER BY cid",
     )
 
@@ -76,13 +76,13 @@ struct SchemaTests {
 @Suite("Document CRUD")
 struct DocumentCRUDTests {
   @Test("Upsert inserts a new document")
-  func upsertInsert() throws {
+  func upsertInsert() async throws {
     let engine = try WorkspaceEngine()
 
     let record = DocumentRecord(path: "docs/hello.md", kind: .document, title: "Hello")
-    try engine.upsertDocument(record)
+    try await engine.upsertDocument(record)
 
-    let doc = try engine.document(at: "docs/hello.md")
+    let doc = try await engine.document(at: "docs/hello.md")
     #expect(doc != nil)
     #expect(doc?.record.path == "docs/hello.md")
     #expect(doc?.record.kind == .document)
@@ -90,75 +90,75 @@ struct DocumentCRUDTests {
   }
 
   @Test("Upsert updates an existing document")
-  func upsertUpdate() throws {
+  func upsertUpdate() async throws {
     let engine = try WorkspaceEngine()
 
     let record1 = DocumentRecord(path: "docs/hello.md", kind: .document, title: "Hello")
-    try engine.upsertDocument(record1)
+    try await engine.upsertDocument(record1)
 
     let record2 = DocumentRecord(path: "docs/hello.md", kind: .document, title: "Updated")
-    try engine.upsertDocument(record2)
+    try await engine.upsertDocument(record2)
 
-    let doc = try engine.document(at: "docs/hello.md")
+    let doc = try await engine.document(at: "docs/hello.md")
     #expect(doc?.record.title == "Updated")
 
     // Should still be one document, not two.
-    let all = try engine.allDocuments()
+    let all = try await engine.allDocuments()
     #expect(all.count == 1)
   }
 
   @Test("Upsert with properties stores them in properties table")
-  func upsertWithProperties() throws {
+  func upsertWithProperties() async throws {
     let engine = try WorkspaceEngine()
 
     let record = DocumentRecord(path: "issues/0001.md", kind: .issue, title: "Bug")
-    try engine.upsertDocument(record, properties: [
+    try await engine.upsertDocument(record, properties: [
       "status": "open",
       "priority": "high",
       "assignee": "alice",
     ])
 
-    let doc = try engine.document(at: "issues/0001.md")
+    let doc = try await engine.document(at: "issues/0001.md")
     #expect(doc?.properties["status"] == "open")
     #expect(doc?.properties["priority"] == "high")
     #expect(doc?.properties["assignee"] == "alice")
   }
 
   @Test("Upsert replaces old properties")
-  func upsertReplacesProperties() throws {
+  func upsertReplacesProperties() async throws {
     let engine = try WorkspaceEngine()
 
     let record = DocumentRecord(path: "issues/0001.md", kind: .issue, title: "Bug")
-    try engine.upsertDocument(record, properties: [
+    try await engine.upsertDocument(record, properties: [
       "status": "open",
       "priority": "high",
       "assignee": "alice",
     ])
 
     // Update with different properties.
-    try engine.upsertDocument(record, properties: [
+    try await engine.upsertDocument(record, properties: [
       "status": "closed",
     ])
 
-    let doc = try engine.document(at: "issues/0001.md")
+    let doc = try await engine.document(at: "issues/0001.md")
     #expect(doc?.properties["status"] == "closed")
     #expect(doc?.properties["priority"] == nil)
     #expect(doc?.properties["assignee"] == nil)
   }
 
   @Test("Upsert populates kind extension table")
-  func upsertPopulatesExtensionTable() throws {
+  func upsertPopulatesExtensionTable() async throws {
     let engine = try WorkspaceEngine()
 
     let record = DocumentRecord(path: "issues/0001.md", kind: .issue, title: "Bug")
-    try engine.upsertDocument(record, properties: [
+    try await engine.upsertDocument(record, properties: [
       "status": "open",
       "priority": "high",
       "assignee": "alice",
     ])
 
     // Query the extension table directly.
-    let rows = try engine.rawQuery(
+    let rows = try await engine.rawQuery(
       "SELECT * FROM issues WHERE path = 'issues/0001.md'",
     )
 
@@ -170,50 +170,50 @@ struct DocumentCRUDTests {
   }
 
   @Test("Remove document deletes from docs")
-  func removeDocument() throws {
+  func removeDocument() async throws {
     let engine = try WorkspaceEngine()
 
     let record = DocumentRecord(path: "docs/hello.md", kind: .document, title: "Hello")
-    try engine.upsertDocument(record, properties: ["tag": "greeting"])
+    try await engine.upsertDocument(record, properties: ["tag": "greeting"])
 
-    try engine.removeDocument(at: "docs/hello.md")
+    try await engine.removeDocument(at: "docs/hello.md")
 
-    let doc = try engine.document(at: "docs/hello.md")
+    let doc = try await engine.document(at: "docs/hello.md")
     #expect(doc == nil)
   }
 
   @Test("Remove document cascades to properties")
-  func removeDocumentCascadesProperties() throws {
+  func removeDocumentCascadesProperties() async throws {
     let engine = try WorkspaceEngine()
 
     let record = DocumentRecord(path: "issues/0001.md", kind: .issue, title: "Bug")
-    try engine.upsertDocument(record, properties: ["status": "open"])
+    try await engine.upsertDocument(record, properties: ["status": "open"])
 
-    try engine.removeDocument(at: "issues/0001.md")
+    try await engine.removeDocument(at: "issues/0001.md")
 
-    let propRows = try engine.rawQuery(
+    let propRows = try await engine.rawQuery(
       "SELECT * FROM properties WHERE path = 'issues/0001.md'",
     )
     #expect(propRows.isEmpty)
   }
 
   @Test("Remove document cascades to kind extension table")
-  func removeDocumentCascadesExtension() throws {
+  func removeDocumentCascadesExtension() async throws {
     let engine = try WorkspaceEngine()
 
     let record = DocumentRecord(path: "issues/0001.md", kind: .issue, title: "Bug")
-    try engine.upsertDocument(record, properties: ["status": "open"])
+    try await engine.upsertDocument(record, properties: ["status": "open"])
 
-    try engine.removeDocument(at: "issues/0001.md")
+    try await engine.removeDocument(at: "issues/0001.md")
 
-    let issueRows = try engine.rawQuery(
+    let issueRows = try await engine.rawQuery(
       "SELECT * FROM issues WHERE path = 'issues/0001.md'",
     )
     #expect(issueRows.isEmpty)
   }
 
   @Test("Remove all documents clears everything")
-  func removeAllDocuments() throws {
+  func removeAllDocuments() async throws {
     let engine = try WorkspaceEngine()
 
     for i in 1 ... 5 {
@@ -222,26 +222,26 @@ struct DocumentCRUDTests {
         kind: .document,
         title: "Doc \(i)",
       )
-      try engine.upsertDocument(record, properties: ["index": "\(i)"])
+      try await engine.upsertDocument(record, properties: ["index": "\(i)"])
     }
 
-    try engine.removeAllDocuments()
+    try await engine.removeAllDocuments()
 
-    let all = try engine.allDocuments()
+    let all = try await engine.allDocuments()
     #expect(all.isEmpty)
 
-    let propRows = try engine.rawQuery("SELECT * FROM properties")
+    let propRows = try await engine.rawQuery("SELECT * FROM properties")
     #expect(propRows.isEmpty)
   }
 
   @Test("Document with nil title")
-  func nilTitle() throws {
+  func nilTitle() async throws {
     let engine = try WorkspaceEngine()
 
     let record = DocumentRecord(path: "docs/untitled.md", kind: .document)
-    try engine.upsertDocument(record)
+    try await engine.upsertDocument(record)
 
-    let doc = try engine.document(at: "docs/untitled.md")
+    let doc = try await engine.document(at: "docs/untitled.md")
     #expect(doc != nil)
     #expect(doc?.record.title == nil)
   }
@@ -252,81 +252,81 @@ struct DocumentCRUDTests {
 @Suite("Queries")
 struct QueryTests {
   @Test("All documents returns all")
-  func allDocuments() throws {
+  func allDocuments() async throws {
     let engine = try WorkspaceEngine()
 
-    try engine.upsertDocument(DocumentRecord(path: "a.md", kind: .document, title: "A"))
-    try engine.upsertDocument(DocumentRecord(path: "b.md", kind: .issue, title: "B"))
-    try engine.upsertDocument(DocumentRecord(path: "c.md", kind: .document, title: "C"))
+    try await engine.upsertDocument(DocumentRecord(path: "a.md", kind: .document, title: "A"))
+    try await engine.upsertDocument(DocumentRecord(path: "b.md", kind: .issue, title: "B"))
+    try await engine.upsertDocument(DocumentRecord(path: "c.md", kind: .document, title: "C"))
 
-    let all = try engine.allDocuments()
+    let all = try await engine.allDocuments()
     #expect(all.count == 3)
   }
 
   @Test("All documents are sorted by path")
-  func allDocumentsSorted() throws {
+  func allDocumentsSorted() async throws {
     let engine = try WorkspaceEngine()
 
-    try engine.upsertDocument(DocumentRecord(path: "c.md", kind: .document, title: "C"))
-    try engine.upsertDocument(DocumentRecord(path: "a.md", kind: .document, title: "A"))
-    try engine.upsertDocument(DocumentRecord(path: "b.md", kind: .document, title: "B"))
+    try await engine.upsertDocument(DocumentRecord(path: "c.md", kind: .document, title: "C"))
+    try await engine.upsertDocument(DocumentRecord(path: "a.md", kind: .document, title: "A"))
+    try await engine.upsertDocument(DocumentRecord(path: "b.md", kind: .document, title: "B"))
 
-    let all = try engine.allDocuments()
+    let all = try await engine.allDocuments()
     #expect(all.map(\.path) == ["a.md", "b.md", "c.md"])
   }
 
   @Test("Documents filtered by kind")
-  func documentsByKind() throws {
+  func documentsByKind() async throws {
     let engine = try WorkspaceEngine()
 
-    try engine.upsertDocument(DocumentRecord(path: "doc1.md", kind: .document, title: "D1"))
-    try engine.upsertDocument(DocumentRecord(path: "issue1.md", kind: .issue, title: "I1"))
-    try engine.upsertDocument(DocumentRecord(path: "doc2.md", kind: .document, title: "D2"))
-    try engine.upsertDocument(DocumentRecord(path: "issue2.md", kind: .issue, title: "I2"))
+    try await engine.upsertDocument(DocumentRecord(path: "doc1.md", kind: .document, title: "D1"))
+    try await engine.upsertDocument(DocumentRecord(path: "issue1.md", kind: .issue, title: "I1"))
+    try await engine.upsertDocument(DocumentRecord(path: "doc2.md", kind: .document, title: "D2"))
+    try await engine.upsertDocument(DocumentRecord(path: "issue2.md", kind: .issue, title: "I2"))
 
-    let docs = try engine.documents(where: .document)
+    let docs = try await engine.documents(where: .document)
     #expect(docs.count == 2)
     #expect(docs.allSatisfy { $0.kind == .document })
 
-    let issues = try engine.documents(where: .issue)
+    let issues = try await engine.documents(where: .issue)
     #expect(issues.count == 2)
     #expect(issues.allSatisfy { $0.kind == .issue })
   }
 
   @Test("Document at path returns single result")
-  func documentAtPath() throws {
+  func documentAtPath() async throws {
     let engine = try WorkspaceEngine()
 
-    try engine.upsertDocument(DocumentRecord(path: "target.md", kind: .document, title: "Target"))
-    try engine.upsertDocument(DocumentRecord(path: "other.md", kind: .document, title: "Other"))
+    try await engine.upsertDocument(DocumentRecord(path: "target.md", kind: .document, title: "Target"))
+    try await engine.upsertDocument(DocumentRecord(path: "other.md", kind: .document, title: "Other"))
 
-    let doc = try engine.document(at: "target.md")
+    let doc = try await engine.document(at: "target.md")
     #expect(doc?.record.path == "target.md")
     #expect(doc?.record.title == "Target")
   }
 
   @Test("Document at nonexistent path returns nil")
-  func documentAtNonexistentPath() throws {
+  func documentAtNonexistentPath() async throws {
     let engine = try WorkspaceEngine()
 
-    let doc = try engine.document(at: "nonexistent.md")
+    let doc = try await engine.document(at: "nonexistent.md")
     #expect(doc == nil)
   }
 
   @Test("Raw query works")
-  func rawQuery() throws {
+  func rawQuery() async throws {
     let engine = try WorkspaceEngine()
 
-    try engine.upsertDocument(
+    try await engine.upsertDocument(
       DocumentRecord(path: "issues/0001.md", kind: .issue, title: "Bug"),
       properties: ["status": "open", "priority": "high"],
     )
-    try engine.upsertDocument(
+    try await engine.upsertDocument(
       DocumentRecord(path: "issues/0002.md", kind: .issue, title: "Feature"),
       properties: ["status": "closed", "priority": "low"],
     )
 
-    let rows = try engine.rawQuery(
+    let rows = try await engine.rawQuery(
       "SELECT d.path, d.title, i.status FROM docs d JOIN issues i ON d.path = i.path WHERE i.status = 'open'",
     )
 
@@ -336,19 +336,19 @@ struct QueryTests {
   }
 
   @Test("Raw query with join on properties table")
-  func rawQueryProperties() throws {
+  func rawQueryProperties() async throws {
     let engine = try WorkspaceEngine()
 
-    try engine.upsertDocument(
+    try await engine.upsertDocument(
       DocumentRecord(path: "docs/a.md", kind: .document, title: "A"),
       properties: ["tag": "important"],
     )
-    try engine.upsertDocument(
+    try await engine.upsertDocument(
       DocumentRecord(path: "docs/b.md", kind: .document, title: "B"),
       properties: ["tag": "trivial"],
     )
 
-    let rows = try engine.rawQuery(
+    let rows = try await engine.rawQuery(
       "SELECT d.path FROM docs d JOIN properties p ON d.path = p.path WHERE p.key = 'tag' AND p.value = 'important'",
     )
 
@@ -362,7 +362,7 @@ struct QueryTests {
 @Suite("Multiple Kind Definitions")
 struct MultipleKindTests {
   @Test("Multiple custom kinds create separate extension tables")
-  func multipleCustomKinds() throws {
+  func multipleCustomKinds() async throws {
     let config = WorkspaceConfiguration(kinds: [
       KindDefinition(kind: "recipe", properties: ["cuisine", "difficulty"]),
       KindDefinition(kind: "note", properties: ["category"]),
@@ -370,74 +370,74 @@ struct MultipleKindTests {
     let engine = try WorkspaceEngine(configuration: config)
 
     // Verify both extension tables exist.
-    let recipeColumns = try engine.rawQuery(
+    let recipeColumns = try await engine.rawQuery(
       "SELECT name FROM pragma_table_info('recipes') ORDER BY cid",
     )
     #expect(recipeColumns.map { $0["name"]! } == ["path", "cuisine", "difficulty"])
 
-    let noteColumns = try engine.rawQuery(
+    let noteColumns = try await engine.rawQuery(
       "SELECT name FROM pragma_table_info('notes') ORDER BY cid",
     )
     #expect(noteColumns.map { $0["name"]! } == ["path", "category"])
   }
 
   @Test("Custom kind documents get populated extension table")
-  func customKindPopulation() throws {
+  func customKindPopulation() async throws {
     let config = WorkspaceConfiguration(kinds: [
       KindDefinition(kind: "recipe", properties: ["cuisine", "difficulty"]),
     ])
     let engine = try WorkspaceEngine(configuration: config)
 
-    try engine.upsertDocument(
+    try await engine.upsertDocument(
       DocumentRecord(path: "recipes/pasta.md", kind: "recipe", title: "Pasta"),
       properties: ["cuisine": "Italian", "difficulty": "easy", "servings": "4"],
     )
 
     // Extension table should have cuisine and difficulty.
-    let rows = try engine.rawQuery("SELECT * FROM recipes")
+    let rows = try await engine.rawQuery("SELECT * FROM recipes")
     #expect(rows.count == 1)
     #expect(rows[0]["cuisine"] == "Italian")
     #expect(rows[0]["difficulty"] == "easy")
 
     // Properties table should have all three.
-    let props = try engine.rawQuery(
+    let props = try await engine.rawQuery(
       "SELECT key, value FROM properties WHERE path = 'recipes/pasta.md' ORDER BY key",
     )
     #expect(props.count == 3)
 
     // Full document should return all properties.
-    let doc = try engine.document(at: "recipes/pasta.md")
+    let doc = try await engine.document(at: "recipes/pasta.md")
     #expect(doc?.properties["cuisine"] == "Italian")
     #expect(doc?.properties["difficulty"] == "easy")
     #expect(doc?.properties["servings"] == "4")
   }
 
   @Test("Built-in and custom kinds work together")
-  func builtInAndCustom() throws {
+  func builtInAndCustom() async throws {
     let config = WorkspaceConfiguration(kinds: [
       KindDefinition(kind: "recipe", properties: ["cuisine"]),
     ])
     let engine = try WorkspaceEngine(configuration: config)
 
-    try engine.upsertDocument(
+    try await engine.upsertDocument(
       DocumentRecord(path: "issues/1.md", kind: .issue, title: "Bug"),
       properties: ["status": "open"],
     )
-    try engine.upsertDocument(
+    try await engine.upsertDocument(
       DocumentRecord(path: "recipes/pasta.md", kind: "recipe", title: "Pasta"),
       properties: ["cuisine": "Italian"],
     )
-    try engine.upsertDocument(
+    try await engine.upsertDocument(
       DocumentRecord(path: "docs/readme.md", kind: .document, title: "README"),
     )
 
-    let all = try engine.allDocuments()
+    let all = try await engine.allDocuments()
     #expect(all.count == 3)
 
-    let issues = try engine.documents(where: .issue)
+    let issues = try await engine.documents(where: .issue)
     #expect(issues.count == 1)
 
-    let recipes = try engine.documents(where: "recipe")
+    let recipes = try await engine.documents(where: "recipe")
     #expect(recipes.count == 1)
   }
 }
@@ -447,62 +447,62 @@ struct MultipleKindTests {
 @Suite("Edge Cases")
 struct EdgeCaseTests {
   @Test("Empty database returns empty results")
-  func emptyDatabase() throws {
+  func emptyDatabase() async throws {
     let engine = try WorkspaceEngine()
 
-    let all = try engine.allDocuments()
+    let all = try await engine.allDocuments()
     #expect(all.isEmpty)
 
-    let doc = try engine.document(at: "anything.md")
+    let doc = try await engine.document(at: "anything.md")
     #expect(doc == nil)
 
-    let docs = try engine.documents(where: .document)
+    let docs = try await engine.documents(where: .document)
     #expect(docs.isEmpty)
   }
 
   @Test("Document with empty properties dictionary")
-  func emptyProperties() throws {
+  func emptyProperties() async throws {
     let engine = try WorkspaceEngine()
 
-    try engine.upsertDocument(
+    try await engine.upsertDocument(
       DocumentRecord(path: "test.md", kind: .document, title: "Test"),
       properties: [:],
     )
 
-    let doc = try engine.document(at: "test.md")
+    let doc = try await engine.document(at: "test.md")
     #expect(doc?.properties.isEmpty == true)
   }
 
   @Test("Upsert changes document kind")
-  func changeKind() throws {
+  func changeKind() async throws {
     let engine = try WorkspaceEngine()
 
     // Insert as document.
-    try engine.upsertDocument(
+    try await engine.upsertDocument(
       DocumentRecord(path: "flexible.md", kind: .document, title: "Flexible"),
     )
 
     // Update to issue with properties.
-    try engine.upsertDocument(
+    try await engine.upsertDocument(
       DocumentRecord(path: "flexible.md", kind: .issue, title: "Now an issue"),
       properties: ["status": "open"],
     )
 
-    let doc = try engine.document(at: "flexible.md")
+    let doc = try await engine.document(at: "flexible.md")
     #expect(doc?.kind == .issue)
     #expect(doc?.title == "Now an issue")
     #expect(doc?.properties["status"] == "open")
   }
 
   @Test("Kind definition resolved correctly merges built-ins")
-  func kindDefinitionResolution() throws {
+  func kindDefinitionResolution() async throws {
     // Override the built-in issue kind with extra properties.
     let config = WorkspaceConfiguration(kinds: [
       KindDefinition(kind: .issue, properties: ["status", "priority", "assignee"]),
     ])
     let engine = try WorkspaceEngine(configuration: config)
 
-    let columns = try engine.rawQuery(
+    let columns = try await engine.rawQuery(
       "SELECT name FROM pragma_table_info('issues') ORDER BY cid",
     )
 
@@ -511,16 +511,16 @@ struct EdgeCaseTests {
   }
 
   @Test("Extension table gets NULL for missing properties")
-  func extensionTableNullProperties() throws {
+  func extensionTableNullProperties() async throws {
     let engine = try WorkspaceEngine()
 
     // Insert issue with only status, no priority.
-    try engine.upsertDocument(
+    try await engine.upsertDocument(
       DocumentRecord(path: "issues/1.md", kind: .issue, title: "Partial"),
       properties: ["status": "open"],
     )
 
-    let rows = try engine.rawQuery("SELECT status, priority FROM issues")
+    let rows = try await engine.rawQuery("SELECT status, priority FROM issues")
     #expect(rows.count == 1)
     #expect(rows[0]["status"] == "open")
     // priority should be NULL, which means absent from the dictionary.
