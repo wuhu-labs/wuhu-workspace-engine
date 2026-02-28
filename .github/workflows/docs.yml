@@ -24,6 +24,7 @@ jobs:
 
       - name: Generate DocC for each target
         run: |
+          mkdir -p .build/docs
           for target in WorkspaceContracts WorkspaceEngine WorkspaceScanner; do
             echo "=== Generating docs for $target ==="
             mkdir -p .build/target-symbols
